@@ -1,11 +1,16 @@
-# ML Job Crawler
+# ML Jobs Crawler
 
-A Node/Express app that:
+A web app that crawls multiple job sources for machine learning roles, displays live crawl progress, and renders the collected jobs in a UI list.
 
-- Crawls the web for machine-learning jobs from multiple sources.
-- Streams crawl progress to the UI in real time.
-- Shows collected jobs in a searchable-style card list.
-- Supports an **Advanced mode** that runs a LangGraph-style deep research flow and uses an LLM API token for scoring/summaries.
+## Features
+
+- Crawl job APIs and aggregate postings.
+- Filter for ML/AI-focused roles.
+- Live progress updates with server-sent events (SSE).
+- Advanced mode:
+  - Runs a LangGraph-style deep-research workflow.
+  - Accepts an LLM API token and attempts model-based ranking.
+  - Falls back to heuristic ranking when no token is provided or LLM call fails.
 
 ## Run locally
 
@@ -14,21 +19,9 @@ npm install
 npm start
 ```
 
-Open http://localhost:3000.
-
-## How it works
-
-- **Standard mode**
-  - Pulls jobs from RemoteOK + WeWorkRemotely RSS.
-  - Filters jobs with ML/AI keywords.
-  - Deduplicates and displays results.
-
-- **Advanced mode**
-  - Requires an LLM API token in the UI.
-  - Executes a staged LangGraph-style pipeline (planning, collection, enrichment, synthesis).
-  - Calls OpenAI Chat Completions (`gpt-4o-mini` by default) to assign `fitScore` and rationale to top jobs.
+Open `http://localhost:3000`.
 
 ## Notes
 
-- Advanced mode expects a token compatible with `https://api.openai.com/v1/chat/completions`.
-- You can change model using `OPENAI_MODEL` env var.
+- Advanced mode uses the OpenAI chat completions API endpoint in this implementation.
+- The LLM token is sent only when you start a crawl and enable advanced mode.

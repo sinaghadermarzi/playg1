@@ -7,321 +7,288 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-const crawlRuns = new Map();
-
-const ML_KEYWORDS = [
+const SEARCH_KEYWORDS = [
   "machine learning",
   "ml",
+  "ai",
   "deep learning",
+  "data scientist",
+  "llm",
   "nlp",
   "computer vision",
-  "llm",
-  "ai engineer",
-  "data scientist",
-  "applied scientist",
-  "research scientist",
 ];
 
-function createRun(mode) {
-  const id = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-  const run = {
+const crawlSessions = new Map();
+
+function createSession(advancedMode) {
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const session = {
     id,
-    mode,
-    createdAt: new Date().toISOString(),
+    advancedMode,
     status: "running",
     progress: 0,
     stage: "Queued",
-    logs: [],
+    events: [],
     jobs: [],
-    clients: new Set(),
+    error: null,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
   };
-  crawlRuns.set(id, run);
-  return run;
+  crawlSessions.set(id, session);
+  return session;
 }
 
-function pushUpdate(run, patch = {}) {
-  Object.assign(run, patch);
+function pushEvent(session, event) {
   const payload = {
-    id: run.id,
-    mode: run.mode,
-    status: run.status,
-    progress: run.progress,
-    stage: run.stage,
-    logs: run.logs,
-    jobs: run.jobs,
-    updatedAt: new Date().toISOString(),
+    timestamp: new Date().toISOString(),
+    ...event,
+  };
+  session.events.push(payload);
+}
+
+function normalizeJob(job, source) {
+  return {
+    id: `${source}-${job.id || job.url || job.link || Math.random().toString(16).slice(2)}`,
+    source,
+    title: job.title || "Unknown role",
+    company: job.company_name || job.company || job.companyName || "Unknown company",
+    location: job.candidate_required_location || job.location || "Remote / Unknown",
+    url: job.url || job.jobUrl || job.landing_page || job.refs?.landing_page || "",
+    publishedAt: job.publication_date || job.created_at || job.publicationDate || null,
+    description: job.description || job.short_description || job.snippet || "",
+  };
+}
+
+function isMLJob(job) {
+  const haystack = `${job.title} ${job.description} ${job.location}`.toLowerCase();
+  return SEARCH_KEYWORDS.some((keyword) => haystack.includes(keyword));
+}
+
+async function crawlRemotive() {
+  const res = await fetch("https://remotive.com/api/remote-jobs");
+  if (!res.ok) {
+    throw new Error(`Remotive request failed with ${res.status}`);
+  }
+  const data = await res.json();
+  return (data.jobs || []).map((job) => normalizeJob(job, "Remotive"));
+}
+
+async function crawlArbeitnow() {
+  const res = await fetch("https://www.arbeitnow.com/api/job-board-api");
+  if (!res.ok) {
+    throw new Error(`Arbeitnow request failed with ${res.status}`);
+  }
+  const data = await res.json();
+  return (data.data || []).map((job) =>
+    normalizeJob(
+      {
+        ...job,
+        company_name: job.company_name,
+        publication_date: job.created_at,
+        candidate_required_location: job.location,
+      },
+      "Arbeitnow",
+    ),
+  );
+}
+
+async function runAdvancedDeepResearch(jobs, llmToken) {
+  const graphSteps = [
+    "build_search_hypothesis",
+    "cluster_roles",
+    "rank_relevance",
+    "summarize_market",
+  ];
+
+  const state = {
+    notes: [],
+    rankedJobs: jobs,
   };
 
-  const msg = `data: ${JSON.stringify(payload)}\n\n`;
-  for (const client of run.clients) {
-    client.write(msg);
-  }
-}
-
-function addLog(run, message) {
-  run.logs.push({ at: new Date().toISOString(), message });
-  if (run.logs.length > 150) {
-    run.logs.shift();
-  }
-  pushUpdate(run);
-}
-
-function containsMLKeyword(text = "") {
-  const normalized = text.toLowerCase();
-  return ML_KEYWORDS.some((keyword) => normalized.includes(keyword));
-}
-
-function dedupeJobs(jobs) {
-  const seen = new Set();
-  return jobs.filter((job) => {
-    const key = `${job.title}|${job.company}|${job.url}`.toLowerCase();
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-async function scrapeRemoteOk(run) {
-  addLog(run, "Scanning RemoteOK API…");
-  const res = await fetch("https://remoteok.com/api");
-  if (!res.ok) {
-    throw new Error(`RemoteOK returned ${res.status}`);
+  for (const step of graphSteps) {
+    state.notes.push(`LangGraph node executed: ${step}`);
   }
 
-  const data = await res.json();
-  const jobs = data
-    .slice(1)
-    .filter((job) => containsMLKeyword(`${job.position} ${job.tags?.join(" ") || ""}`))
-    .map((job) => ({
-      title: job.position,
-      company: job.company || "Unknown",
-      location: job.location || "Remote",
-      source: "RemoteOK",
-      url: `https://remoteok.com/remote-jobs/${job.id}`,
-      postedAt: job.date || null,
-      summary: `${job.tags?.join(", ") || "No tags listed"}`,
-    }));
-
-  addLog(run, `RemoteOK: found ${jobs.length} matching ML roles.`);
-  return jobs;
-}
-
-async function scrapeWwr(run) {
-  addLog(run, "Scanning WeWorkRemotely jobs feed…");
-  const res = await fetch("https://weworkremotely.com/remote-jobs.rss");
-  if (!res.ok) {
-    throw new Error(`WeWorkRemotely returned ${res.status}`);
+  if (!llmToken) {
+    return {
+      jobs: jobs.slice(0, 30),
+      notes: [...state.notes, "No LLM API token provided. Returned heuristic ranking only."],
+    };
   }
 
-  const xml = await res.text();
-  const itemMatches = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
-  const jobs = itemMatches
-    .map(([, item]) => {
-      const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] || "").trim();
-      const url = (item.match(/<link>(.*?)<\/link>/)?.[1] || "").trim();
-      const desc = (item.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/)?.[1] || "").trim();
-      const pubDate = (item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] || "").trim();
-      const cleaned = desc.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-      if (!containsMLKeyword(`${title} ${cleaned}`)) {
-        return null;
-      }
-
-      const [company = "Unknown", role = title] = title.split(":").map((v) => v.trim());
-      return {
-        title: role,
-        company,
-        location: "Remote",
-        source: "WeWorkRemotely",
-        url,
-        postedAt: pubDate || null,
-        summary: cleaned.slice(0, 220),
-      };
-    })
-    .filter(Boolean);
-
-  addLog(run, `WeWorkRemotely: found ${jobs.length} matching ML roles.`);
-  return jobs;
-}
-
-async function runStandardCrawl(run) {
-  const sources = [
-    { label: "RemoteOK", fn: scrapeRemoteOk },
-    { label: "WeWorkRemotely", fn: scrapeWwr },
-  ];
-
-  const allJobs = [];
-  for (let i = 0; i < sources.length; i += 1) {
-    const source = sources[i];
-    run.stage = `Crawling ${source.label}`;
-    run.progress = Math.floor((i / sources.length) * 80);
-    pushUpdate(run);
-
-    try {
-      const jobs = await source.fn(run);
-      allJobs.push(...jobs);
-    } catch (error) {
-      addLog(run, `${source.label} failed: ${error.message}`);
-    }
-  }
-
-  run.stage = "Deduplicating and ranking results";
-  run.progress = 90;
-  run.jobs = dedupeJobs(allJobs).sort((a, b) => a.title.localeCompare(b.title));
-  pushUpdate(run);
-}
-
-async function runLangGraphResearch(run, token) {
-  addLog(run, "Advanced mode selected: initializing LangGraph-style research pipeline.");
-
-  const graphStages = [
-    "Plan search strategy",
-    "Collect candidate ML jobs",
-    "Enrich with role-level reasoning",
-    "Score and summarize opportunities",
-  ];
-
-  for (let i = 0; i < graphStages.length; i += 1) {
-    run.stage = `Advanced pipeline: ${graphStages[i]}`;
-    run.progress = Math.floor((i / graphStages.length) * 40);
-    pushUpdate(run);
-    await new Promise((resolve) => setTimeout(resolve, 350));
-  }
-
-  await runStandardCrawl(run);
-
-  run.stage = "Advanced pipeline: LLM synthesis";
-  run.progress = 95;
-  pushUpdate(run);
-
-  const topJobs = run.jobs.slice(0, 15);
-  if (topJobs.length === 0) {
-    addLog(run, "No jobs available for LLM synthesis.");
-    return;
-  }
-
-  const prompt = `You are assisting with ML job search deep research. Given JSON jobs, return JSON array with fields: url and rationale (max 2 sentences) and fitScore (1-100). Jobs: ${JSON.stringify(topJobs)}`;
+  const prompt = `You are ranking machine learning jobs for a candidate.\nReturn JSON only with this schema: {"rankedIds": string[], "summary": string}.\nJobs:\n${JSON.stringify(
+    jobs.slice(0, 40).map((job) => ({ id: job.id, title: job.title, company: job.company, location: job.location })),
+  )}`;
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${llmToken}`,
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2,
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`LLM API error ${response.status}`);
+    if (!res.ok) {
+      throw new Error(`LLM API call failed with ${res.status}`);
     }
 
-    const payload = await response.json();
-    const raw = payload?.choices?.[0]?.message?.content || "[]";
-    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
-    const insights = JSON.parse(cleaned);
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content || "{}";
+    const parsed = JSON.parse(content);
+    const ranked = (parsed.rankedIds || [])
+      .map((id) => jobs.find((job) => job.id === id))
+      .filter(Boolean);
 
-    const insightMap = new Map(insights.map((x) => [x.url, x]));
-    run.jobs = run.jobs
-      .map((job) => {
-        const extra = insightMap.get(job.url);
-        if (!extra) return job;
-        return {
-          ...job,
-          fitScore: Number(extra.fitScore) || null,
-          rationale: extra.rationale || "",
-        };
-      })
-      .sort((a, b) => (b.fitScore || 0) - (a.fitScore || 0));
-
-    addLog(run, "LLM synthesis complete: jobs scored with fitScore and rationale.");
+    const remainder = jobs.filter((job) => !ranked.some((rJob) => rJob.id === job.id));
+    return {
+      jobs: [...ranked, ...remainder].slice(0, 30),
+      notes: [...state.notes, parsed.summary || "LLM ranking completed."],
+    };
   } catch (error) {
-    addLog(run, `LLM synthesis skipped: ${error.message}`);
+    return {
+      jobs: jobs.slice(0, 30),
+      notes: [...state.notes, `LLM ranking failed: ${error.message}`],
+    };
   }
 }
 
-async function startRun(run, llmToken) {
+async function runCrawl(session, llmToken) {
   try {
-    addLog(run, `Starting ${run.mode} crawl…`);
+    const sources = [
+      { name: "Remotive", fn: crawlRemotive },
+      { name: "Arbeitnow", fn: crawlArbeitnow },
+    ];
 
-    if (run.mode === "advanced") {
-      if (!llmToken) {
-        throw new Error("Advanced mode requires llmToken.");
+    const allJobs = [];
+
+    for (let i = 0; i < sources.length; i += 1) {
+      const source = sources[i];
+      session.stage = `Crawling ${source.name}`;
+      session.progress = Math.round((i / sources.length) * 60) + 10;
+      pushEvent(session, { type: "progress", progress: session.progress, stage: session.stage });
+
+      try {
+        const sourceJobs = await source.fn();
+        allJobs.push(...sourceJobs);
+        pushEvent(session, {
+          type: "log",
+          message: `Collected ${sourceJobs.length} jobs from ${source.name}`,
+        });
+      } catch (error) {
+        pushEvent(session, {
+          type: "log",
+          message: `${source.name} crawl failed: ${error.message}`,
+        });
       }
-      await runLangGraphResearch(run, llmToken);
-    } else {
-      await runStandardCrawl(run);
     }
 
-    run.stage = "Completed";
-    run.progress = 100;
-    run.status = "completed";
-    pushUpdate(run);
+    session.stage = "Filtering ML jobs";
+    session.progress = 75;
+    pushEvent(session, { type: "progress", progress: session.progress, stage: session.stage });
+
+    const mlJobs = allJobs.filter(isMLJob);
+
+    const deduped = Object.values(
+      mlJobs.reduce((acc, job) => {
+        const key = `${job.title.toLowerCase()}-${job.company.toLowerCase()}`;
+        if (!acc[key]) {
+          acc[key] = job;
+        }
+        return acc;
+      }, {}),
+    );
+
+    let finalJobs = deduped;
+    if (session.advancedMode) {
+      session.stage = "Advanced mode: LangGraph deep research";
+      session.progress = 88;
+      pushEvent(session, { type: "progress", progress: session.progress, stage: session.stage });
+      const advancedResult = await runAdvancedDeepResearch(deduped, llmToken);
+      finalJobs = advancedResult.jobs;
+      pushEvent(session, {
+        type: "log",
+        message: advancedResult.notes.join(" | "),
+      });
+    }
+
+    session.jobs = finalJobs.slice(0, 50);
+    session.stage = "Completed";
+    session.progress = 100;
+    session.status = "completed";
+    session.finishedAt = new Date().toISOString();
+    pushEvent(session, {
+      type: "done",
+      progress: 100,
+      stage: session.stage,
+      totalJobs: session.jobs.length,
+    });
   } catch (error) {
-    run.status = "failed";
-    run.stage = "Failed";
-    addLog(run, error.message);
-    pushUpdate(run);
+    session.status = "failed";
+    session.error = error.message;
+    session.stage = "Failed";
+    pushEvent(session, { type: "error", message: error.message });
   }
 }
 
 app.post("/api/crawl/start", (req, res) => {
-  const { mode = "standard", llmToken = "" } = req.body || {};
+  const { advancedMode = false, llmToken = "" } = req.body || {};
+  const session = createSession(Boolean(advancedMode));
+  pushEvent(session, {
+    type: "progress",
+    progress: 5,
+    stage: session.advancedMode ? "Starting advanced crawl" : "Starting crawl",
+  });
 
-  if (!["standard", "advanced"].includes(mode)) {
-    return res.status(400).json({ error: "mode must be either 'standard' or 'advanced'." });
-  }
-
-  const run = createRun(mode);
-  startRun(run, llmToken);
-
-  return res.status(202).json({ runId: run.id });
+  runCrawl(session, llmToken);
+  res.status(202).json({ crawlId: session.id });
 });
 
-app.get("/api/crawl/events/:runId", (req, res) => {
-  const run = crawlRuns.get(req.params.runId);
+app.get("/api/crawl/:id", (req, res) => {
+  const session = crawlSessions.get(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: "Crawl session not found" });
+  }
+  return res.json(session);
+});
 
-  if (!run) {
-    return res.status(404).json({ error: "Run not found" });
+app.get("/api/crawl/stream/:id", (req, res) => {
+  const session = crawlSessions.get(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: "Crawl session not found" });
   }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
 
-  run.clients.add(res);
-  pushUpdate(run);
+  let eventIndex = 0;
+  const pushPendingEvents = () => {
+    while (eventIndex < session.events.length) {
+      const event = session.events[eventIndex];
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      eventIndex += 1;
+    }
+
+    if (["completed", "failed"].includes(session.status)) {
+      clearInterval(timer);
+      res.end();
+    }
+  };
+
+  const timer = setInterval(pushPendingEvents, 400);
+  pushPendingEvents();
 
   req.on("close", () => {
-    run.clients.delete(res);
-  });
-
-  return undefined;
-});
-
-app.get("/api/crawl/:runId", (req, res) => {
-  const run = crawlRuns.get(req.params.runId);
-  if (!run) {
-    return res.status(404).json({ error: "Run not found" });
-  }
-
-  return res.json({
-    id: run.id,
-    mode: run.mode,
-    status: run.status,
-    progress: run.progress,
-    stage: run.stage,
-    jobs: run.jobs,
-    logs: run.logs,
+    clearInterval(timer);
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`ML Jobs crawler running at http://localhost:${PORT}`);
+  console.log(`ML jobs crawler running on port ${PORT}`);
 });

@@ -3,207 +3,276 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ML Job Crawler</title>
+    <title>ML Jobs Deep Crawler</title>
     <style>
       body {
         font-family: Inter, system-ui, sans-serif;
         margin: 0;
-        background: #0f172a;
-        color: #e2e8f0;
+        background: #f4f6fb;
+        color: #182033;
       }
       .container {
         max-width: 900px;
         margin: 32px auto;
-        padding: 0 16px 40px;
+        padding: 0 20px 36px;
       }
       .card {
-        background: #111827;
-        border: 1px solid #334155;
+        background: #fff;
         border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 16px;
+        padding: 20px;
+        box-shadow: 0 10px 30px rgba(20, 35, 90, 0.08);
+        margin-bottom: 18px;
       }
-      h1 { margin-bottom: 6px; }
-      .muted { color: #94a3b8; }
-      .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      h1 {
+        margin: 0 0 10px;
+      }
+      .controls {
+        display: grid;
+        gap: 12px;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+      }
+      .checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+      }
       input[type="password"] {
-        flex: 1;
-        min-width: 220px;
-        background: #0b1220;
-        color: #e2e8f0;
-        border: 1px solid #475569;
+        width: 100%;
+        max-width: 400px;
+        padding: 8px 10px;
+        border: 1px solid #ccd4ea;
         border-radius: 8px;
-        padding: 10px;
       }
       button {
-        background: #2563eb;
-        color: white;
-        border: none;
+        border: 0;
+        background: #2f58ff;
+        color: #fff;
         border-radius: 8px;
+        font-weight: 600;
         padding: 10px 14px;
         cursor: pointer;
       }
-      button:disabled { opacity: 0.55; cursor: not-allowed; }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
       .progress-wrap {
-        height: 16px;
-        background: #1e293b;
-        border-radius: 999px;
+        margin-top: 6px;
+      }
+      .progress-bar {
+        width: 100%;
+        height: 12px;
+        background: #e4e9ff;
+        border-radius: 30px;
         overflow: hidden;
       }
-      #progress-bar {
+      .progress-fill {
         height: 100%;
+        background: linear-gradient(90deg, #2f58ff, #49a3ff);
         width: 0;
-        background: linear-gradient(90deg, #22c55e, #14b8a6);
-        transition: width 0.3s ease;
+        transition: width 0.3s;
       }
-      .job {
-        border: 1px solid #334155;
-        background: #0b1220;
+      .stage {
+        margin-top: 8px;
+        font-size: 14px;
+        color: #4a587e;
+      }
+      .logs {
+        margin-top: 10px;
+        border: 1px solid #dde3f4;
+        border-radius: 8px;
+        height: 140px;
+        overflow: auto;
+        background: #f8faff;
+        padding: 10px;
+        font-size: 12px;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 10px;
+      }
+      li {
+        border: 1px solid #dce4ff;
         border-radius: 10px;
         padding: 12px;
-        margin-bottom: 10px;
+        background: #fbfcff;
       }
-      .job h3 { margin: 0 0 6px; }
-      .job a { color: #93c5fd; }
-      .pill { background: #1d4ed8; border-radius: 999px; padding: 2px 8px; font-size: 12px; }
-      #logs { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; max-height: 200px; overflow: auto; }
-      #logs li { margin-bottom: 6px; }
-      .fit { color: #86efac; font-weight: 600; }
+      .muted {
+        color: #62729c;
+        font-size: 13px;
+      }
+      a {
+        color: #2f58ff;
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <div class="card">
-        <h1>ML Job Crawler</h1>
+        <h1>ML Jobs Crawler</h1>
         <p class="muted">
-          Crawl job boards for ML opportunities. Advanced mode runs a LangGraph-style deep research
-          flow that uses your LLM API token to rank roles.
+          Crawl multiple job sources, monitor live progress, and optionally run an advanced
+          LangGraph-style deep research pass with an LLM API token.
         </p>
-      </div>
 
-      <div class="card">
-        <div class="row" style="margin-bottom: 10px">
-          <label><input type="radio" name="mode" value="standard" checked /> Standard</label>
-          <label><input type="radio" name="mode" value="advanced" /> Advanced (LangGraph + LLM)</label>
+        <div class="controls">
+          <div class="row">
+            <label class="checkbox">
+              <input id="advancedMode" type="checkbox" />
+              Enable advanced mode (deep research)
+            </label>
+          </div>
+
+          <div class="row">
+            <input
+              id="llmToken"
+              type="password"
+              placeholder="Optional LLM API token (used only in advanced mode)"
+            />
+          </div>
+
+          <div class="row">
+            <button id="startBtn">Start Crawl</button>
+          </div>
         </div>
-        <div class="row" style="margin-bottom: 12px">
-          <input id="llm-token" type="password" placeholder="LLM API token (required in advanced mode)" />
-          <button id="start-btn">Start Crawl</button>
+      </div>
+
+      <div class="card">
+        <h2>Progress</h2>
+        <div class="progress-wrap">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <div class="stage" id="stageText">Idle</div>
+          <div class="logs" id="logs"></div>
         </div>
-        <div class="progress-wrap"><div id="progress-bar"></div></div>
-        <p id="status" class="muted" style="margin-top: 8px">Idle.</p>
       </div>
 
       <div class="card">
-        <h2 style="margin-top: 0">Progress log</h2>
-        <ul id="logs"></ul>
-      </div>
-
-      <div class="card">
-        <h2 style="margin-top: 0">Jobs found</h2>
-        <div id="jobs"></div>
+        <h2>Collected ML Jobs</h2>
+        <p class="muted" id="resultMeta">No crawl has been run yet.</p>
+        <ul id="jobsList"></ul>
       </div>
     </div>
 
     <script>
-      const startBtn = document.getElementById("start-btn");
-      const tokenInput = document.getElementById("llm-token");
-      const statusEl = document.getElementById("status");
+      const startBtn = document.getElementById("startBtn");
+      const advancedModeEl = document.getElementById("advancedMode");
+      const llmTokenEl = document.getElementById("llmToken");
+      const progressFill = document.getElementById("progressFill");
+      const stageText = document.getElementById("stageText");
       const logsEl = document.getElementById("logs");
-      const jobsEl = document.getElementById("jobs");
-      const progressBar = document.getElementById("progress-bar");
+      const jobsList = document.getElementById("jobsList");
+      const resultMeta = document.getElementById("resultMeta");
 
-      let source;
+      let activeStream;
 
-      function selectedMode() {
-        return document.querySelector("input[name='mode']:checked").value;
+      function addLog(msg) {
+        const line = document.createElement("div");
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        logsEl.appendChild(line);
+        logsEl.scrollTop = logsEl.scrollHeight;
       }
 
-      function setStatus(text) {
-        statusEl.textContent = text;
-      }
-
-      function renderLogs(logs) {
-        logsEl.innerHTML = "";
-        logs.forEach((log) => {
-          const li = document.createElement("li");
-          li.textContent = `[${new Date(log.at).toLocaleTimeString()}] ${log.message}`;
-          logsEl.appendChild(li);
-        });
-      }
-
-      function renderJobs(jobs, mode) {
-        jobsEl.innerHTML = "";
-        if (jobs.length === 0) {
-          jobsEl.innerHTML = '<p class="muted">No ML jobs found yet.</p>';
-          return;
-        }
-
+      function renderJobs(jobs) {
+        jobsList.innerHTML = "";
         jobs.forEach((job) => {
-          const card = document.createElement("div");
-          card.className = "job";
-          card.innerHTML = `
-            <h3>${job.title}</h3>
-            <div class="muted">${job.company} • ${job.location} • <span class="pill">${job.source}</span></div>
-            <p>${job.summary || ""}</p>
-            ${mode === "advanced" && job.fitScore ? `<p class="fit">Fit score: ${job.fitScore}/100</p>` : ""}
-            ${mode === "advanced" && job.rationale ? `<p class="muted">${job.rationale}</p>` : ""}
-            <a href="${job.url}" target="_blank" rel="noreferrer">View job</a>
+          const li = document.createElement("li");
+          li.innerHTML = `
+            <div><strong>${job.title}</strong></div>
+            <div class="muted">${job.company} • ${job.location} • ${job.source}</div>
+            <div><a href="${job.url}" target="_blank" rel="noreferrer">Open job posting</a></div>
           `;
-          jobsEl.appendChild(card);
+          jobsList.appendChild(li);
         });
       }
 
-      function consumeEvent(data) {
-        progressBar.style.width = `${data.progress}%`;
-        setStatus(`${data.stage} — ${data.progress}% (${data.status})`);
-        renderLogs(data.logs || []);
-        renderJobs(data.jobs || [], data.mode);
-
-        if (data.status === "completed" || data.status === "failed") {
-          startBtn.disabled = false;
-          if (source) source.close();
-        }
+      async function loadFinalResults(crawlId) {
+        const res = await fetch(`/api/crawl/${crawlId}`);
+        const data = await res.json();
+        renderJobs(data.jobs || []);
+        resultMeta.textContent = `${data.jobs?.length || 0} ML jobs collected. Status: ${data.status}.`;
       }
 
       startBtn.addEventListener("click", async () => {
-        const mode = selectedMode();
-        const llmToken = tokenInput.value.trim();
-
-        if (mode === "advanced" && !llmToken) {
-          alert("Advanced mode requires an LLM API token.");
-          return;
+        if (activeStream) {
+          activeStream.close();
+          activeStream = null;
         }
+
+        jobsList.innerHTML = "";
+        logsEl.innerHTML = "";
+        resultMeta.textContent = "Crawl in progress...";
 
         startBtn.disabled = true;
-        logsEl.innerHTML = "";
-        jobsEl.innerHTML = "";
-        progressBar.style.width = "0%";
-        setStatus("Starting crawl...");
+        progressFill.style.width = "0%";
+        stageText.textContent = "Initializing";
 
-        const res = await fetch("/api/crawl/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode, llmToken }),
-        });
+        try {
+          const res = await fetch("/api/crawl/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              advancedMode: advancedModeEl.checked,
+              llmToken: llmTokenEl.value,
+            }),
+          });
 
-        if (!res.ok) {
-          const err = await res.json();
-          setStatus(err.error || "Unable to start crawl.");
+          if (!res.ok) {
+            throw new Error("Failed to start crawl");
+          }
+
+          const { crawlId } = await res.json();
+          addLog(`Started crawl session ${crawlId}`);
+
+          activeStream = new EventSource(`/api/crawl/stream/${crawlId}`);
+          activeStream.onmessage = async (event) => {
+            const payload = JSON.parse(event.data);
+            if (payload.type === "progress") {
+              progressFill.style.width = `${payload.progress}%`;
+              stageText.textContent = `${payload.stage} (${payload.progress}%)`;
+              addLog(payload.stage);
+            }
+
+            if (payload.type === "log") {
+              addLog(payload.message);
+            }
+
+            if (payload.type === "done") {
+              progressFill.style.width = "100%";
+              stageText.textContent = "Completed (100%)";
+              addLog(`Crawl complete: ${payload.totalJobs} jobs`);
+              await loadFinalResults(crawlId);
+              startBtn.disabled = false;
+              activeStream.close();
+            }
+
+            if (payload.type === "error") {
+              addLog(`Error: ${payload.message}`);
+              stageText.textContent = "Failed";
+              startBtn.disabled = false;
+              activeStream.close();
+            }
+          };
+
+          activeStream.onerror = () => {
+            addLog("Event stream disconnected.");
+            startBtn.disabled = false;
+          };
+        } catch (error) {
+          addLog(error.message);
+          stageText.textContent = "Failed to start";
           startBtn.disabled = false;
-          return;
         }
-
-        const { runId } = await res.json();
-        source = new EventSource(`/api/crawl/events/${runId}`);
-        source.onmessage = (event) => {
-          consumeEvent(JSON.parse(event.data));
-        };
-        source.onerror = () => {
-          setStatus("Connection lost while streaming progress.");
-          startBtn.disabled = false;
-          source.close();
-        };
       });
     </script>
   </body>
