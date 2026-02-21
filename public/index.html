@@ -3,196 +3,208 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Message Board</title>
+    <title>ML Job Crawler</title>
     <style>
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
       body {
-        font-family: system-ui, sans-serif;
-        max-width: 600px;
-        margin: 40px auto;
-        padding: 0 20px;
-        color: #333;
+        font-family: Inter, system-ui, sans-serif;
+        margin: 0;
+        background: #0f172a;
+        color: #e2e8f0;
       }
-      h1 {
-        margin-bottom: 24px;
+      .container {
+        max-width: 900px;
+        margin: 32px auto;
+        padding: 0 16px 40px;
       }
-      form {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-bottom: 32px;
+      .card {
+        background: #111827;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
       }
-      textarea {
-        width: 100%;
-        height: 80px;
+      h1 { margin-bottom: 6px; }
+      .muted { color: #94a3b8; }
+      .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      input[type="password"] {
+        flex: 1;
+        min-width: 220px;
+        background: #0b1220;
+        color: #e2e8f0;
+        border: 1px solid #475569;
+        border-radius: 8px;
         padding: 10px;
-        border: 1px solid #ccc;
-        border-radius: 6px;
-        font-family: inherit;
-        font-size: 14px;
-        resize: vertical;
-      }
-      .form-footer {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .char-count {
-        font-size: 13px;
-        color: #888;
-      }
-      .char-count.over {
-        color: #e00;
-        font-weight: bold;
       }
       button {
-        padding: 8px 20px;
-        background: #333;
-        color: #fff;
+        background: #2563eb;
+        color: white;
         border: none;
-        border-radius: 6px;
-        font-size: 14px;
+        border-radius: 8px;
+        padding: 10px 14px;
         cursor: pointer;
       }
-      button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
+      button:disabled { opacity: 0.55; cursor: not-allowed; }
+      .progress-wrap {
+        height: 16px;
+        background: #1e293b;
+        border-radius: 999px;
+        overflow: hidden;
       }
-      .error {
-        color: #e00;
-        font-size: 13px;
-        margin-top: 4px;
+      #progress-bar {
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, #22c55e, #14b8a6);
+        transition: width 0.3s ease;
       }
-      #messages {
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      #messages li {
+      .job {
+        border: 1px solid #334155;
+        background: #0b1220;
+        border-radius: 10px;
         padding: 12px;
-        border: 1px solid #e0e0e0;
-        border-radius: 6px;
-        background: #fafafa;
+        margin-bottom: 10px;
       }
-      #messages li .text {
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-      #messages li .meta {
-        margin-top: 6px;
-        font-size: 12px;
-        color: #999;
-      }
-      #messages li .source {
-        display: inline-block;
-        font-size: 11px;
-        padding: 1px 6px;
-        border-radius: 4px;
-        background: #0088cc;
-        color: #fff;
-        margin-bottom: 4px;
-      }
+      .job h3 { margin: 0 0 6px; }
+      .job a { color: #93c5fd; }
+      .pill { background: #1d4ed8; border-radius: 999px; padding: 2px 8px; font-size: 12px; }
+      #logs { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; max-height: 200px; overflow: auto; }
+      #logs li { margin-bottom: 6px; }
+      .fit { color: #86efac; font-weight: 600; }
     </style>
   </head>
   <body>
-    <h1>Message Board</h1>
-
-    <form id="msg-form">
-      <textarea
-        id="msg-input"
-        maxlength="280"
-        placeholder="Write a message (max 280 characters)..."
-      ></textarea>
-      <div class="form-footer">
-        <span class="char-count" id="char-count">0 / 280</span>
-        <button type="submit" id="submit-btn">Post</button>
+    <div class="container">
+      <div class="card">
+        <h1>ML Job Crawler</h1>
+        <p class="muted">
+          Crawl job boards for ML opportunities. Advanced mode runs a LangGraph-style deep research
+          flow that uses your LLM API token to rank roles.
+        </p>
       </div>
-      <div class="error" id="error"></div>
-    </form>
 
-    <ul id="messages"></ul>
+      <div class="card">
+        <div class="row" style="margin-bottom: 10px">
+          <label><input type="radio" name="mode" value="standard" checked /> Standard</label>
+          <label><input type="radio" name="mode" value="advanced" /> Advanced (LangGraph + LLM)</label>
+        </div>
+        <div class="row" style="margin-bottom: 12px">
+          <input id="llm-token" type="password" placeholder="LLM API token (required in advanced mode)" />
+          <button id="start-btn">Start Crawl</button>
+        </div>
+        <div class="progress-wrap"><div id="progress-bar"></div></div>
+        <p id="status" class="muted" style="margin-top: 8px">Idle.</p>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top: 0">Progress log</h2>
+        <ul id="logs"></ul>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top: 0">Jobs found</h2>
+        <div id="jobs"></div>
+      </div>
+    </div>
 
     <script>
-      const MAX = 280;
-      const form = document.getElementById("msg-form");
-      const input = document.getElementById("msg-input");
-      const charCount = document.getElementById("char-count");
-      const errorEl = document.getElementById("error");
-      const messagesList = document.getElementById("messages");
-      const submitBtn = document.getElementById("submit-btn");
+      const startBtn = document.getElementById("start-btn");
+      const tokenInput = document.getElementById("llm-token");
+      const statusEl = document.getElementById("status");
+      const logsEl = document.getElementById("logs");
+      const jobsEl = document.getElementById("jobs");
+      const progressBar = document.getElementById("progress-bar");
 
-      input.addEventListener("input", () => {
-        const len = input.value.length;
-        charCount.textContent = `${len} / ${MAX}`;
-        charCount.classList.toggle("over", len > MAX);
-      });
+      let source;
 
-      async function loadMessages() {
-        const res = await fetch("/api/messages");
-        const messages = await res.json();
-        messagesList.innerHTML = "";
-        messages
-          .slice()
-          .reverse()
-          .forEach((m) => {
-            const li = document.createElement("li");
-            if (m.source === "telegram") {
-              const source = document.createElement("span");
-              source.className = "source";
-              source.textContent = `Telegram — ${m.sender}`;
-              li.appendChild(source);
-            }
-            const text = document.createElement("div");
-            text.className = "text";
-            text.textContent = m.message;
-            const meta = document.createElement("div");
-            meta.className = "meta";
-            meta.textContent = new Date(m.timestamp).toLocaleString();
-            li.appendChild(text);
-            li.appendChild(meta);
-            messagesList.appendChild(li);
-          });
+      function selectedMode() {
+        return document.querySelector("input[name='mode']:checked").value;
       }
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        errorEl.textContent = "";
-        const message = input.value.trim();
+      function setStatus(text) {
+        statusEl.textContent = text;
+      }
 
-        if (!message) {
-          errorEl.textContent = "Message cannot be empty.";
+      function renderLogs(logs) {
+        logsEl.innerHTML = "";
+        logs.forEach((log) => {
+          const li = document.createElement("li");
+          li.textContent = `[${new Date(log.at).toLocaleTimeString()}] ${log.message}`;
+          logsEl.appendChild(li);
+        });
+      }
+
+      function renderJobs(jobs, mode) {
+        jobsEl.innerHTML = "";
+        if (jobs.length === 0) {
+          jobsEl.innerHTML = '<p class="muted">No ML jobs found yet.</p>';
           return;
         }
 
-        submitBtn.disabled = true;
-        try {
-          const res = await fetch("/api/messages", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message }),
-          });
-          if (!res.ok) {
-            const data = await res.json();
-            errorEl.textContent = data.error || "Something went wrong.";
-            return;
-          }
-          input.value = "";
-          charCount.textContent = "0 / 280";
-          await loadMessages();
-        } catch {
-          errorEl.textContent = "Failed to send message.";
-        } finally {
-          submitBtn.disabled = false;
-        }
-      });
+        jobs.forEach((job) => {
+          const card = document.createElement("div");
+          card.className = "job";
+          card.innerHTML = `
+            <h3>${job.title}</h3>
+            <div class="muted">${job.company} • ${job.location} • <span class="pill">${job.source}</span></div>
+            <p>${job.summary || ""}</p>
+            ${mode === "advanced" && job.fitScore ? `<p class="fit">Fit score: ${job.fitScore}/100</p>` : ""}
+            ${mode === "advanced" && job.rationale ? `<p class="muted">${job.rationale}</p>` : ""}
+            <a href="${job.url}" target="_blank" rel="noreferrer">View job</a>
+          `;
+          jobsEl.appendChild(card);
+        });
+      }
 
-      loadMessages();
-      setInterval(loadMessages, 5000);
+      function consumeEvent(data) {
+        progressBar.style.width = `${data.progress}%`;
+        setStatus(`${data.stage} — ${data.progress}% (${data.status})`);
+        renderLogs(data.logs || []);
+        renderJobs(data.jobs || [], data.mode);
+
+        if (data.status === "completed" || data.status === "failed") {
+          startBtn.disabled = false;
+          if (source) source.close();
+        }
+      }
+
+      startBtn.addEventListener("click", async () => {
+        const mode = selectedMode();
+        const llmToken = tokenInput.value.trim();
+
+        if (mode === "advanced" && !llmToken) {
+          alert("Advanced mode requires an LLM API token.");
+          return;
+        }
+
+        startBtn.disabled = true;
+        logsEl.innerHTML = "";
+        jobsEl.innerHTML = "";
+        progressBar.style.width = "0%";
+        setStatus("Starting crawl...");
+
+        const res = await fetch("/api/crawl/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode, llmToken }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          setStatus(err.error || "Unable to start crawl.");
+          startBtn.disabled = false;
+          return;
+        }
+
+        const { runId } = await res.json();
+        source = new EventSource(`/api/crawl/events/${runId}`);
+        source.onmessage = (event) => {
+          consumeEvent(JSON.parse(event.data));
+        };
+        source.onerror = () => {
+          setStatus("Connection lost while streaming progress.");
+          startBtn.disabled = false;
+          source.close();
+        };
+      });
     </script>
   </body>
 </html>

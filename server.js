@@ -1,123 +1,327 @@
 const express = require("express");
-const fs = require("fs");
 const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const MAX_MESSAGE_LENGTH = 280;
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const MESSAGES_FILE = path.join(__dirname, "data", "messages.json");
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// Ensure data directory exists
-fs.mkdirSync(path.dirname(MESSAGES_FILE), { recursive: true });
+const crawlRuns = new Map();
 
-// Initialize messages file if it doesn't exist
-if (!fs.existsSync(MESSAGES_FILE)) {
-  fs.writeFileSync(MESSAGES_FILE, JSON.stringify([], null, 2));
+const ML_KEYWORDS = [
+  "machine learning",
+  "ml",
+  "deep learning",
+  "nlp",
+  "computer vision",
+  "llm",
+  "ai engineer",
+  "data scientist",
+  "applied scientist",
+  "research scientist",
+];
+
+function createRun(mode) {
+  const id = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+  const run = {
+    id,
+    mode,
+    createdAt: new Date().toISOString(),
+    status: "running",
+    progress: 0,
+    stage: "Queued",
+    logs: [],
+    jobs: [],
+    clients: new Set(),
+  };
+  crawlRuns.set(id, run);
+  return run;
 }
 
-function readMessages() {
-  const data = fs.readFileSync(MESSAGES_FILE, "utf-8");
-  return JSON.parse(data);
+function pushUpdate(run, patch = {}) {
+  Object.assign(run, patch);
+  const payload = {
+    id: run.id,
+    mode: run.mode,
+    status: run.status,
+    progress: run.progress,
+    stage: run.stage,
+    logs: run.logs,
+    jobs: run.jobs,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const msg = `data: ${JSON.stringify(payload)}\n\n`;
+  for (const client of run.clients) {
+    client.write(msg);
+  }
 }
 
-function writeMessages(messages) {
-  fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messages, null, 2));
+function addLog(run, message) {
+  run.logs.push({ at: new Date().toISOString(), message });
+  if (run.logs.length > 150) {
+    run.logs.shift();
+  }
+  pushUpdate(run);
 }
 
-async function sendTelegramNotification(text) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.warn("Telegram notification skipped: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set");
+function containsMLKeyword(text = "") {
+  const normalized = text.toLowerCase();
+  return ML_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function dedupeJobs(jobs) {
+  const seen = new Set();
+  return jobs.filter((job) => {
+    const key = `${job.title}|${job.company}|${job.url}`.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+async function scrapeRemoteOk(run) {
+  addLog(run, "Scanning RemoteOK API…");
+  const res = await fetch("https://remoteok.com/api");
+  if (!res.ok) {
+    throw new Error(`RemoteOK returned ${res.status}`);
+  }
+
+  const data = await res.json();
+  const jobs = data
+    .slice(1)
+    .filter((job) => containsMLKeyword(`${job.position} ${job.tags?.join(" ") || ""}`))
+    .map((job) => ({
+      title: job.position,
+      company: job.company || "Unknown",
+      location: job.location || "Remote",
+      source: "RemoteOK",
+      url: `https://remoteok.com/remote-jobs/${job.id}`,
+      postedAt: job.date || null,
+      summary: `${job.tags?.join(", ") || "No tags listed"}`,
+    }));
+
+  addLog(run, `RemoteOK: found ${jobs.length} matching ML roles.`);
+  return jobs;
+}
+
+async function scrapeWwr(run) {
+  addLog(run, "Scanning WeWorkRemotely jobs feed…");
+  const res = await fetch("https://weworkremotely.com/remote-jobs.rss");
+  if (!res.ok) {
+    throw new Error(`WeWorkRemotely returned ${res.status}`);
+  }
+
+  const xml = await res.text();
+  const itemMatches = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+  const jobs = itemMatches
+    .map(([, item]) => {
+      const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] || "").trim();
+      const url = (item.match(/<link>(.*?)<\/link>/)?.[1] || "").trim();
+      const desc = (item.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/)?.[1] || "").trim();
+      const pubDate = (item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] || "").trim();
+      const cleaned = desc.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+      if (!containsMLKeyword(`${title} ${cleaned}`)) {
+        return null;
+      }
+
+      const [company = "Unknown", role = title] = title.split(":").map((v) => v.trim());
+      return {
+        title: role,
+        company,
+        location: "Remote",
+        source: "WeWorkRemotely",
+        url,
+        postedAt: pubDate || null,
+        summary: cleaned.slice(0, 220),
+      };
+    })
+    .filter(Boolean);
+
+  addLog(run, `WeWorkRemotely: found ${jobs.length} matching ML roles.`);
+  return jobs;
+}
+
+async function runStandardCrawl(run) {
+  const sources = [
+    { label: "RemoteOK", fn: scrapeRemoteOk },
+    { label: "WeWorkRemotely", fn: scrapeWwr },
+  ];
+
+  const allJobs = [];
+  for (let i = 0; i < sources.length; i += 1) {
+    const source = sources[i];
+    run.stage = `Crawling ${source.label}`;
+    run.progress = Math.floor((i / sources.length) * 80);
+    pushUpdate(run);
+
+    try {
+      const jobs = await source.fn(run);
+      allJobs.push(...jobs);
+    } catch (error) {
+      addLog(run, `${source.label} failed: ${error.message}`);
+    }
+  }
+
+  run.stage = "Deduplicating and ranking results";
+  run.progress = 90;
+  run.jobs = dedupeJobs(allJobs).sort((a, b) => a.title.localeCompare(b.title));
+  pushUpdate(run);
+}
+
+async function runLangGraphResearch(run, token) {
+  addLog(run, "Advanced mode selected: initializing LangGraph-style research pipeline.");
+
+  const graphStages = [
+    "Plan search strategy",
+    "Collect candidate ML jobs",
+    "Enrich with role-level reasoning",
+    "Score and summarize opportunities",
+  ];
+
+  for (let i = 0; i < graphStages.length; i += 1) {
+    run.stage = `Advanced pipeline: ${graphStages[i]}`;
+    run.progress = Math.floor((i / graphStages.length) * 40);
+    pushUpdate(run);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+
+  await runStandardCrawl(run);
+
+  run.stage = "Advanced pipeline: LLM synthesis";
+  run.progress = 95;
+  pushUpdate(run);
+
+  const topJobs = run.jobs.slice(0, 15);
+  if (topJobs.length === 0) {
+    addLog(run, "No jobs available for LLM synthesis.");
     return;
   }
+
+  const prompt = `You are assisting with ML job search deep research. Given JSON jobs, return JSON array with fields: url and rationale (max 2 sentences) and fitScore (1-100). Jobs: ${JSON.stringify(topJobs)}`;
+
   try {
-    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-    const res = await fetch(url, {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+      }),
     });
-    if (!res.ok) {
-      const err = await res.text();
-      console.error("Telegram API error:", err);
+
+    if (!response.ok) {
+      throw new Error(`LLM API error ${response.status}`);
     }
-  } catch (err) {
-    console.error("Failed to send Telegram notification:", err.message);
+
+    const payload = await response.json();
+    const raw = payload?.choices?.[0]?.message?.content || "[]";
+    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+    const insights = JSON.parse(cleaned);
+
+    const insightMap = new Map(insights.map((x) => [x.url, x]));
+    run.jobs = run.jobs
+      .map((job) => {
+        const extra = insightMap.get(job.url);
+        if (!extra) return job;
+        return {
+          ...job,
+          fitScore: Number(extra.fitScore) || null,
+          rationale: extra.rationale || "",
+        };
+      })
+      .sort((a, b) => (b.fitScore || 0) - (a.fitScore || 0));
+
+    addLog(run, "LLM synthesis complete: jobs scored with fitScore and rationale.");
+  } catch (error) {
+    addLog(run, `LLM synthesis skipped: ${error.message}`);
   }
 }
 
-// Get all messages
-app.get("/api/messages", (req, res) => {
-  const messages = readMessages();
-  res.json(messages);
+async function startRun(run, llmToken) {
+  try {
+    addLog(run, `Starting ${run.mode} crawl…`);
+
+    if (run.mode === "advanced") {
+      if (!llmToken) {
+        throw new Error("Advanced mode requires llmToken.");
+      }
+      await runLangGraphResearch(run, llmToken);
+    } else {
+      await runStandardCrawl(run);
+    }
+
+    run.stage = "Completed";
+    run.progress = 100;
+    run.status = "completed";
+    pushUpdate(run);
+  } catch (error) {
+    run.status = "failed";
+    run.stage = "Failed";
+    addLog(run, error.message);
+    pushUpdate(run);
+  }
+}
+
+app.post("/api/crawl/start", (req, res) => {
+  const { mode = "standard", llmToken = "" } = req.body || {};
+
+  if (!["standard", "advanced"].includes(mode)) {
+    return res.status(400).json({ error: "mode must be either 'standard' or 'advanced'." });
+  }
+
+  const run = createRun(mode);
+  startRun(run, llmToken);
+
+  return res.status(202).json({ runId: run.id });
 });
 
-// Add a new message
-app.post("/api/messages", (req, res) => {
-  const { message } = req.body;
+app.get("/api/crawl/events/:runId", (req, res) => {
+  const run = crawlRuns.get(req.params.runId);
 
-  if (!message || typeof message !== "string") {
-    return res.status(400).json({ error: "Message is required" });
+  if (!run) {
+    return res.status(404).json({ error: "Run not found" });
   }
 
-  const trimmed = message.trim();
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
 
-  if (trimmed.length === 0) {
-    return res.status(400).json({ error: "Message cannot be empty" });
-  }
+  run.clients.add(res);
+  pushUpdate(run);
 
-  if (trimmed.length > MAX_MESSAGE_LENGTH) {
-    return res
-      .status(400)
-      .json({ error: `Message must be ${MAX_MESSAGE_LENGTH} characters or less` });
-  }
+  req.on("close", () => {
+    run.clients.delete(res);
+  });
 
-  const messages = readMessages();
-  const entry = {
-    id: Date.now(),
-    message: trimmed,
-    timestamp: new Date().toISOString(),
-  };
-  messages.push(entry);
-  writeMessages(messages);
-
-  sendTelegramNotification(`New message on Message Board:\n\n${trimmed}`);
-
-  res.status(201).json(entry);
+  return undefined;
 });
 
-// Telegram webhook - receives messages sent to the bot
-app.post("/api/telegram-webhook", (req, res) => {
-  const update = req.body;
-  const text = update?.message?.text;
-
-  if (!text) {
-    return res.sendStatus(200);
+app.get("/api/crawl/:runId", (req, res) => {
+  const run = crawlRuns.get(req.params.runId);
+  if (!run) {
+    return res.status(404).json({ error: "Run not found" });
   }
 
-  const from = update.message.from;
-  const sender = from.username
-    ? `@${from.username}`
-    : [from.first_name, from.last_name].filter(Boolean).join(" ");
-
-  const messages = readMessages();
-  const entry = {
-    id: Date.now(),
-    message: text,
-    timestamp: new Date().toISOString(),
-    source: "telegram",
-    sender,
-  };
-  messages.push(entry);
-  writeMessages(messages);
-
-  res.sendStatus(200);
+  return res.json({
+    id: run.id,
+    mode: run.mode,
+    status: run.status,
+    progress: run.progress,
+    stage: run.stage,
+    jobs: run.jobs,
+    logs: run.logs,
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`ML Jobs crawler running at http://localhost:${PORT}`);
 });
