@@ -3,196 +3,277 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Message Board</title>
+    <title>ML Jobs Deep Crawler</title>
     <style>
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
       body {
-        font-family: system-ui, sans-serif;
-        max-width: 600px;
-        margin: 40px auto;
-        padding: 0 20px;
-        color: #333;
+        font-family: Inter, system-ui, sans-serif;
+        margin: 0;
+        background: #f4f6fb;
+        color: #182033;
+      }
+      .container {
+        max-width: 900px;
+        margin: 32px auto;
+        padding: 0 20px 36px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 10px 30px rgba(20, 35, 90, 0.08);
+        margin-bottom: 18px;
       }
       h1 {
-        margin-bottom: 24px;
+        margin: 0 0 10px;
       }
-      form {
+      .controls {
+        display: grid;
+        gap: 12px;
+      }
+      .row {
         display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-bottom: 32px;
-      }
-      textarea {
-        width: 100%;
-        height: 80px;
-        padding: 10px;
-        border: 1px solid #ccc;
-        border-radius: 6px;
-        font-family: inherit;
-        font-size: 14px;
-        resize: vertical;
-      }
-      .form-footer {
-        display: flex;
-        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 14px;
         align-items: center;
       }
-      .char-count {
-        font-size: 13px;
-        color: #888;
+      .checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
       }
-      .char-count.over {
-        color: #e00;
-        font-weight: bold;
+      input[type="password"] {
+        width: 100%;
+        max-width: 400px;
+        padding: 8px 10px;
+        border: 1px solid #ccd4ea;
+        border-radius: 8px;
       }
       button {
-        padding: 8px 20px;
-        background: #333;
+        border: 0;
+        background: #2f58ff;
         color: #fff;
-        border: none;
-        border-radius: 6px;
-        font-size: 14px;
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 10px 14px;
         cursor: pointer;
       }
       button:disabled {
         opacity: 0.5;
         cursor: not-allowed;
       }
-      .error {
-        color: #e00;
-        font-size: 13px;
-        margin-top: 4px;
-      }
-      #messages {
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      #messages li {
-        padding: 12px;
-        border: 1px solid #e0e0e0;
-        border-radius: 6px;
-        background: #fafafa;
-      }
-      #messages li .text {
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-      #messages li .meta {
+      .progress-wrap {
         margin-top: 6px;
-        font-size: 12px;
-        color: #999;
       }
-      #messages li .source {
-        display: inline-block;
-        font-size: 11px;
-        padding: 1px 6px;
-        border-radius: 4px;
-        background: #0088cc;
-        color: #fff;
-        margin-bottom: 4px;
+      .progress-bar {
+        width: 100%;
+        height: 12px;
+        background: #e4e9ff;
+        border-radius: 30px;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #2f58ff, #49a3ff);
+        width: 0;
+        transition: width 0.3s;
+      }
+      .stage {
+        margin-top: 8px;
+        font-size: 14px;
+        color: #4a587e;
+      }
+      .logs {
+        margin-top: 10px;
+        border: 1px solid #dde3f4;
+        border-radius: 8px;
+        height: 140px;
+        overflow: auto;
+        background: #f8faff;
+        padding: 10px;
+        font-size: 12px;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 10px;
+      }
+      li {
+        border: 1px solid #dce4ff;
+        border-radius: 10px;
+        padding: 12px;
+        background: #fbfcff;
+      }
+      .muted {
+        color: #62729c;
+        font-size: 13px;
+      }
+      a {
+        color: #2f58ff;
       }
     </style>
   </head>
   <body>
-    <h1>Message Board</h1>
+    <div class="container">
+      <div class="card">
+        <h1>ML Jobs Crawler</h1>
+        <p class="muted">
+          Crawl multiple job sources, monitor live progress, and optionally run an advanced
+          LangGraph-style deep research pass with an LLM API token.
+        </p>
 
-    <form id="msg-form">
-      <textarea
-        id="msg-input"
-        maxlength="280"
-        placeholder="Write a message (max 280 characters)..."
-      ></textarea>
-      <div class="form-footer">
-        <span class="char-count" id="char-count">0 / 280</span>
-        <button type="submit" id="submit-btn">Post</button>
+        <div class="controls">
+          <div class="row">
+            <label class="checkbox">
+              <input id="advancedMode" type="checkbox" />
+              Enable advanced mode (deep research)
+            </label>
+          </div>
+
+          <div class="row">
+            <input
+              id="llmToken"
+              type="password"
+              placeholder="Optional LLM API token (used only in advanced mode)"
+            />
+          </div>
+
+          <div class="row">
+            <button id="startBtn">Start Crawl</button>
+          </div>
+        </div>
       </div>
-      <div class="error" id="error"></div>
-    </form>
 
-    <ul id="messages"></ul>
+      <div class="card">
+        <h2>Progress</h2>
+        <div class="progress-wrap">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <div class="stage" id="stageText">Idle</div>
+          <div class="logs" id="logs"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Collected ML Jobs</h2>
+        <p class="muted" id="resultMeta">No crawl has been run yet.</p>
+        <ul id="jobsList"></ul>
+      </div>
+    </div>
 
     <script>
-      const MAX = 280;
-      const form = document.getElementById("msg-form");
-      const input = document.getElementById("msg-input");
-      const charCount = document.getElementById("char-count");
-      const errorEl = document.getElementById("error");
-      const messagesList = document.getElementById("messages");
-      const submitBtn = document.getElementById("submit-btn");
+      const startBtn = document.getElementById("startBtn");
+      const advancedModeEl = document.getElementById("advancedMode");
+      const llmTokenEl = document.getElementById("llmToken");
+      const progressFill = document.getElementById("progressFill");
+      const stageText = document.getElementById("stageText");
+      const logsEl = document.getElementById("logs");
+      const jobsList = document.getElementById("jobsList");
+      const resultMeta = document.getElementById("resultMeta");
 
-      input.addEventListener("input", () => {
-        const len = input.value.length;
-        charCount.textContent = `${len} / ${MAX}`;
-        charCount.classList.toggle("over", len > MAX);
-      });
+      let activeStream;
 
-      async function loadMessages() {
-        const res = await fetch("/api/messages");
-        const messages = await res.json();
-        messagesList.innerHTML = "";
-        messages
-          .slice()
-          .reverse()
-          .forEach((m) => {
-            const li = document.createElement("li");
-            if (m.source === "telegram") {
-              const source = document.createElement("span");
-              source.className = "source";
-              source.textContent = `Telegram — ${m.sender}`;
-              li.appendChild(source);
-            }
-            const text = document.createElement("div");
-            text.className = "text";
-            text.textContent = m.message;
-            const meta = document.createElement("div");
-            meta.className = "meta";
-            meta.textContent = new Date(m.timestamp).toLocaleString();
-            li.appendChild(text);
-            li.appendChild(meta);
-            messagesList.appendChild(li);
-          });
+      function addLog(msg) {
+        const line = document.createElement("div");
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        logsEl.appendChild(line);
+        logsEl.scrollTop = logsEl.scrollHeight;
       }
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        errorEl.textContent = "";
-        const message = input.value.trim();
+      function renderJobs(jobs) {
+        jobsList.innerHTML = "";
+        jobs.forEach((job) => {
+          const li = document.createElement("li");
+          li.innerHTML = `
+            <div><strong>${job.title}</strong></div>
+            <div class="muted">${job.company} • ${job.location} • ${job.source}</div>
+            <div><a href="${job.url}" target="_blank" rel="noreferrer">Open job posting</a></div>
+          `;
+          jobsList.appendChild(li);
+        });
+      }
 
-        if (!message) {
-          errorEl.textContent = "Message cannot be empty.";
-          return;
+      async function loadFinalResults(crawlId) {
+        const res = await fetch(`/api/crawl/${crawlId}`);
+        const data = await res.json();
+        renderJobs(data.jobs || []);
+        resultMeta.textContent = `${data.jobs?.length || 0} ML jobs collected. Status: ${data.status}.`;
+      }
+
+      startBtn.addEventListener("click", async () => {
+        if (activeStream) {
+          activeStream.close();
+          activeStream = null;
         }
 
-        submitBtn.disabled = true;
+        jobsList.innerHTML = "";
+        logsEl.innerHTML = "";
+        resultMeta.textContent = "Crawl in progress...";
+
+        startBtn.disabled = true;
+        progressFill.style.width = "0%";
+        stageText.textContent = "Initializing";
+
         try {
-          const res = await fetch("/api/messages", {
+          const res = await fetch("/api/crawl/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message }),
+            body: JSON.stringify({
+              advancedMode: advancedModeEl.checked,
+              llmToken: llmTokenEl.value,
+            }),
           });
+
           if (!res.ok) {
-            const data = await res.json();
-            errorEl.textContent = data.error || "Something went wrong.";
-            return;
+            throw new Error("Failed to start crawl");
           }
-          input.value = "";
-          charCount.textContent = "0 / 280";
-          await loadMessages();
-        } catch {
-          errorEl.textContent = "Failed to send message.";
-        } finally {
-          submitBtn.disabled = false;
+
+          const { crawlId } = await res.json();
+          addLog(`Started crawl session ${crawlId}`);
+
+          activeStream = new EventSource(`/api/crawl/stream/${crawlId}`);
+          activeStream.onmessage = async (event) => {
+            const payload = JSON.parse(event.data);
+            if (payload.type === "progress") {
+              progressFill.style.width = `${payload.progress}%`;
+              stageText.textContent = `${payload.stage} (${payload.progress}%)`;
+              addLog(payload.stage);
+            }
+
+            if (payload.type === "log") {
+              addLog(payload.message);
+            }
+
+            if (payload.type === "done") {
+              progressFill.style.width = "100%";
+              stageText.textContent = "Completed (100%)";
+              addLog(`Crawl complete: ${payload.totalJobs} jobs`);
+              await loadFinalResults(crawlId);
+              startBtn.disabled = false;
+              activeStream.close();
+            }
+
+            if (payload.type === "error") {
+              addLog(`Error: ${payload.message}`);
+              stageText.textContent = "Failed";
+              startBtn.disabled = false;
+              activeStream.close();
+            }
+          };
+
+          activeStream.onerror = () => {
+            addLog("Event stream disconnected.");
+            startBtn.disabled = false;
+          };
+        } catch (error) {
+          addLog(error.message);
+          stageText.textContent = "Failed to start";
+          startBtn.disabled = false;
         }
       });
-
-      loadMessages();
-      setInterval(loadMessages, 5000);
     </script>
   </body>
 </html>
