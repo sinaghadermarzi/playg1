@@ -3,6 +3,9 @@ name: Deploy to CapRover
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - "public-static/**"
+      - ".github/workflows/deploy-public-static.yml"
 
 jobs:
   deploy:
@@ -16,7 +19,7 @@ jobs:
       - name: Create deploy.tar (CapRover source bundle)
         run: |
           # Create a tarball of the repo contents, excluding git metadata.
-          tar --exclude-vcs -cf deploy.tar .
+          tar --exclude-vcs --exclude=./public-static -cf deploy.tar .
 
           # Sanity check so failures are obvious in logs
           ls -lh deploy.tar

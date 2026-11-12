@@ -1,0 +1,32 @@
+name: Deploy public-static to CapRover
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "public-static/**"
+      - ".github/workflows/deploy-public-static.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The deploy action expects /github/workspace/deploy.tar.
+      # Bundle only the public-static folder, with captain-definition at the tar root.
+      - name: Create deploy.tar (CapRover source bundle)
+        run: |
+          tar -cf deploy.tar -C public-static .
+          tar -tf deploy.tar
+          ls -lh deploy.tar
+
+      - name: Deploy to CapRover
+        uses: caprover/deploy-from-github@v1.1.2
+        with:
+          server: ${{ secrets.CAPROVER_SERVER }}       # e.g. https://captain.yourdomain.com
+          app: ${{ secrets.CAPROVER_STATIC_APP }}      # CapRover app name for the static site
+          token: ${{ secrets.CAPROVER_STATIC_TOKEN }}  # app token from CapRover
